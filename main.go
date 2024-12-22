@@ -7,15 +7,15 @@ import (
 )
 
 func main() {
-	ch := make(chan int, 10)
+	jobs := make(chan int, 10)
 	for {
-		ch <- 1
-		go helper(ch)
+		jobs <- 1
+		go worker(jobs)
 	}
 }
 
-func helper(ch chan int) {
+func worker(jobs chan int) {
 	fmt.Printf("Number of goroutine: %d, Number of CPU: %d\n", runtime.NumGoroutine(), runtime.NumCPU())
 	time.Sleep(1 * time.Second)
-	<-ch
+	<-jobs
 }

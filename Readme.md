@@ -1,89 +1,85 @@
-# Controlling Uncontrolled Goroutines in Go to Prevent CPU Spikes
+# Uncontrolled Goroutines: A Problem in Concurrent Applications
 
-In Go, goroutines are a powerful way to handle concurrency. However, if not managed properly, spawning **uncontrolled goroutines** can lead to **CPU spikes**, **high memory usage**, and overall performance issues, especially in production environments.
+In Go, goroutines are lightweight and efficient, but when not managed properly, they can lead to **resource exhaustion**, including an unbounded increase in goroutines, high CPU usage, and degraded application performance.
 
-## Problem: Uncontrolled Goroutines in Event-Driven Systems
+---
 
-When you spawn goroutines to process events without proper coordination, it can quickly lead to resource exhaustion. This is particularly common in systems that consume events or messages from queues or channels. If we don’t control the number of active goroutines, the system can become overwhelmed, leading to spikes in CPU usage or even crashes.
+## Problem Description
 
-## Solution: Using Channels to Control Goroutines
+The following example spawns a new goroutine each time a job is added to the `jobs` channel. The result is an **unbounded increase** in the number of goroutines, as there is no mechanism to control their creation.
 
-Channels in Go provide an elegant way to manage concurrency and control the number of active goroutines. By using channels properly, you can ensure that your system processes events in a controlled and efficient manner, avoiding the potential for resource overload.
-
-### Worker Pool Pattern
-
-A **worker pool** pattern allows you to limit the number of concurrent workers (goroutines) processing events. You can use a **channel** to queue up jobs, and the workers (goroutines) will process the jobs one by one, without exceeding a predefined limit on the number of concurrent workers.
-
-### Key Concepts
-
-- **Fixed number of workers**: Limit the number of goroutines processing events concurrently.
-- **Buffered channel**: Use a buffered channel to temporarily hold events, preventing flooding of workers.
-- **Graceful shutdown**: Coordinate the shutdown of workers to ensure no events are left unprocessed.
-
-### Example: Worker Pool with Channels
+### Code Example: Uncontrolled Goroutines
 
 ```go
 package main
 
 import (
-    "fmt"
-    "sync"
+ "fmt"
+ "runtime"
+ "time"
 )
 
-func worker(id int, jobs <-chan string, wg *sync.WaitGroup) {
-    defer wg.Done()
-    for job := range jobs {
-        fmt.Printf("Worker %d processing job: %s\n", id, job)
-    }
+func main() {
+ jobs := make(chan int, 10) // Buffered channel to hold jobs
+ for {
+  jobs <- 1          // Add a job to the channel
+  go worker(jobs)    // Spawn a new goroutine for each job
+ }
 }
 
-func main() {
-    jobs := make(chan string, 100) // Buffered channel to hold jobs
-    var wg sync.WaitGroup
-
-    // Start a pool of 3 workers
-    for i := 1; i <= 3; i++ {
-        wg.Add(1)
-        go worker(i, jobs, &wg)
-    }
-
-    // Simulate sending jobs to the channel
-    for j := 1; j <= 10; j++ {
-        jobs <- fmt.Sprintf("Job #%d", j)
-    }
-
-    // Close the channel and wait for workers to finish
-    close(jobs)
-    wg.Wait()
+func worker(jobs chan int) {
+ fmt.Printf("Number of goroutines: %d, Number of CPUs: %d\n", runtime.NumGoroutine(), runtime.NumCPU())
+ time.Sleep(1 * time.Second) // Simulate job processing
+ <-jobs                      // Remove the job from the channel
 }
 ```
 
-### Explanation
+---
 
-1. **Worker Function**: Each worker goroutine processes jobs from the `jobs` channel. It continues until the channel is closed.
-2. **Main Function**:
-   - Creates a buffered channel (`jobs`) to hold up to 100 jobs.
-   - Starts 3 worker goroutines that consume jobs from the channel.
-   - Sends 10 jobs into the channel.
-   - Closes the channel and waits for all workers to finish using `sync.WaitGroup`.
+## Observed Behavior
 
-### Benefits
+When running this code, you will notice the following:
 
-- **Controlled concurrency**: By limiting the number of worker goroutines, you prevent system overloads.
-- **Efficient event processing**: Jobs are processed without overwhelming the system.
-- **Graceful shutdown**: Ensures that all jobs are completed before the program exits.
+- **Uncontrolled Goroutine Growth**: Each iteration spawns a new goroutine without any limit, increasing `runtime.NumGoroutine` continuously.
+- **Resource Drain**: The CPU usage may remain manageable for a while but eventually lead to system strain or even a crash if left unchecked.
 
-## Conclusion
+### Sample Output
 
-By using channels and a worker pool, you can effectively control goroutines in your Go applications, prevent CPU spikes, and ensure your system remains efficient and reliable in production environments.
-
-### Key Takeaways
-
-- **Limit concurrency** using channels.
-- **Use worker pools** to manage the number of concurrent goroutines.
-- **Buffered channels** help handle bursts of jobs without overwhelming the system.
-- **Gracefully shut down** workers to ensure proper resource cleanup.
+```
+Number of goroutines: 2, Number of CPUs: 4
+Number of goroutines: 3, Number of CPUs: 4
+Number of goroutines: 4, Number of CPUs: 4
+...
+```
 
 ---
 
-# This pattern can be easily adapted to any Go application that needs to process events or handle concurrent tasks in a controlled manner
+## The Solution: Managing Goroutines with a Worker Pool
+
+Instead of spawning an uncontrolled number of goroutines, you can use a **worker pool** to limit the number of active goroutines. The worker pool processes jobs from the channel in a controlled manner, ensuring efficient resource usage.
+
+### Key Changes to Address the Problem
+
+1. Use a **fixed number of workers** to process jobs concurrently.
+2. Use a **channel** to queue jobs and coordinate workers.
+3. Control the **lifetime of goroutines** and prevent excessive creation.
+
+---
+
+## Why This Matters?
+
+- **Prevents Resource Exhaustion**: Limits the number of active goroutines, avoiding high memory and CPU usage.
+- **Improves Stability**: Ensures predictable and stable application behavior in production.
+- **Enhances Performance**: Efficiently utilizes available CPUs and handles jobs without overwhelming the system.
+
+---
+
+### Next Steps
+
+To control goroutine growth, implement the **worker pool pattern** and modify the code to cap the number of active goroutines
+
+---
+
+By being mindful of how goroutines are created and managed, you can ensure your Go applications remain efficient, scalable, and production-ready. 💡
+
+---
